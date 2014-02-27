@@ -13,10 +13,11 @@ class GraphNode(object):
     def __init__(self, index, latency):
         self.index = index
         self.latency = latency
-        self.producers = []
-        self.consumers = []
+        self.producers = set()
+        self.consumers = set()
         self.status = NOT_PROCESSED
         self.latencies_left = latency
+        self.max_path_from_me = None
     
     def __repr__(self):
         string = ""
@@ -26,13 +27,19 @@ class GraphNode(object):
         return string
 
 def get_critical_path(node):
+    log.debug(node.index)
     if not node.consumers:
-        return node.latency
+        node.max_path_from_me = node.latency
+        return node.max_path_from_me
     else:
         all_paths = []
         for consumer in node.consumers:
-            all_paths.append(node.latency + get_critical_path(consumer))
-        return max(all_paths)
+            if consumer.max_path_from_me:
+                all_paths.append(node.latency + consumer.max_path_from_me)
+            else:
+                all_paths.append(node.latency + get_critical_path(consumer))
+        node.max_path_from_me = max(all_paths)
+        return node.max_path_from_me
         
 def main(instructions_file="", fetch_size=-1, num_execution_units=-1):
     log.info("instructions_file: %s"%instructions_file)
@@ -44,23 +51,25 @@ def main(instructions_file="", fetch_size=-1, num_execution_units=-1):
     all_nodes = []
     with open(instructions_file, 'r') as file_interator:
         for index,line in enumerate(file_interator):
-            tmp = line.split(",")
-            dest_reg, s1_reg = (int(x) for x in tmp[0].split("="))
-            s2_reg, latency = (int(x) for x in tmp[1].split(":"))
-            new_node = GraphNode(index, latency)
+            log.debug("line: %s"%line.strip())
+            if line.strip():
+                tmp = line.strip().split(",")
+                dest_reg, s1_reg = (int(x) for x in tmp[0].split("="))
+                s2_reg, latency = (int(x) for x in tmp[1].split(":"))
+                new_node = GraphNode(index, latency)
             
-            # register renaming
-            if registers_table[s1_reg] is not READY:
-                parent_node = all_nodes[registers_table[s1_reg]]
-                new_node.producers.append(parent_node)
-                parent_node.consumers.append(new_node)
-            if registers_table[s2_reg] is not READY:
-                parent_node = all_nodes[registers_table[s2_reg]]
-                new_node.producers.append(parent_node)
-                parent_node.consumers.append(new_node)
-            registers_table[dest_reg] = index
+                # register renaming
+                if registers_table[s1_reg] is not READY:
+                    parent_node = all_nodes[registers_table[s1_reg]]
+                    new_node.producers.add(parent_node)
+                    parent_node.consumers.add(new_node)
+                if registers_table[s2_reg] is not READY:
+                    parent_node = all_nodes[registers_table[s2_reg]]
+                    new_node.producers.add(parent_node)
+                    parent_node.consumers.add(new_node)
+                registers_table[dest_reg] = index
             
-            all_nodes.append(new_node)
+                all_nodes.append(new_node)
     log.debug(all_nodes)
     
     if num_execution_units == -1 and fetch_size == -1:
@@ -70,11 +79,13 @@ def main(instructions_file="", fetch_size=-1, num_execution_units=-1):
             if not node.producers:
                 dependency_graph_heads.append(node)
         log.debug("dependency_graph_heads: %s"%dependency_graph_heads)
+        log.debug("num heads: %s"%len(dependency_graph_heads))
         
         # if no restriction on both execution units and fetch size
         # then the optimal cycles will be the critical path of the dependency graph
         latencies = []
-        for head in dependency_graph_heads:
+        for i,head in enumerate(dependency_graph_heads):
+            log.debug("i=%s"%i)
             latencies.append(get_critical_path(head))
         print max(latencies)
     
@@ -112,7 +123,7 @@ if __name__ == "__main__":
     handler = StreamHandler()
     handler.setFormatter(logging.Formatter("(%(levelname)s) %(name)s: %(msg)s"))
 
-    root.setLevel(logging.ERROR)
+    root.setLevel(logging.DEBUG)
     root.addHandler(handler)
     
     # -1 for infinite amount
