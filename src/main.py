@@ -46,7 +46,7 @@ def main(instructions_file="", fetch_size=-1, num_execution_units=-1):
     log.info("fetch_size: %s, num_execution_units: %s"%(fetch_size, num_execution_units))
     
     READY = True
-    registers_table = dict((x,READY) for x in xrange(10))
+    registers_table = dict((x,READY) for x in xrange(32)) #registers 0-31
     
     all_nodes = []
     with open(instructions_file, 'r') as file_interator:
