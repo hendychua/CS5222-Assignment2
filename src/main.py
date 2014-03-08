@@ -70,7 +70,7 @@ def main(instructions_file="", fetch_size=-1, num_execution_units=-1):
                 registers_table[dest_reg] = index
             
                 all_nodes.append(new_node)
-    log.debug(all_nodes)
+    log.info(all_nodes)
     
     if num_execution_units == -1 and fetch_size == -1:
         # Part (A)
@@ -103,10 +103,12 @@ def main(instructions_file="", fetch_size=-1, num_execution_units=-1):
                             all(n.status==PROCESSED for n in inode.producers):
                             log.debug("inode %s"%inode.index)
                             inode.status = PROCESSING
+                            log.info("fetched instruction %s in cycle %s."%(inode.index, cycles))
                             instructions_processing += 1
                             instructions_fetch_in_this_cycle += 1
                     if instructions_fetch_in_this_cycle == fetch_size or \
                         instructions_processing == num_execution_units:
+                        log.info("cycle %s. instructions_fetch_in_this_cycle: %s."%(cycles, instructions_fetch_in_this_cycle))
                         break
 
             for inode in all_nodes:
@@ -123,7 +125,7 @@ if __name__ == "__main__":
     handler = StreamHandler()
     handler.setFormatter(logging.Formatter("(%(levelname)s) %(name)s: %(msg)s"))
 
-    root.setLevel(logging.ERROR)
+    root.setLevel(logging.INFO)
     root.addHandler(handler)
     
     # -1 for infinite amount
