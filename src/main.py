@@ -125,7 +125,7 @@ if __name__ == "__main__":
     handler = StreamHandler()
     handler.setFormatter(logging.Formatter("(%(levelname)s) %(name)s: %(msg)s"))
 
-    root.setLevel(logging.INFO)
+    root.setLevel(logging.ERROR)
     root.addHandler(handler)
     
     # -1 for infinite amount
