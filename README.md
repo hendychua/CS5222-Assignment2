@@ -6,8 +6,8 @@ Calculate number of cycles needed by 3 different superscalar processors for a se
 Instructions
 ==================
 - Executables are in bin/
-- You might need to run chmod u+x SSL_L*.exe to give it permissions to execute.
+- Make sure you are in the same directory as MakeAll file and run ./MakeAll. The script will run chmod 700 bin/SSS_*.exe files to give them permissions to execute.
 - To execute a script, cd into bin/ and enter one of the following commands:
-	- ./SSL_Infinite.exe <test_file.in>
-	- ./SSL_LWindow.exe <test_file.in> <window_size>
-	- ./SSL_LWinExe.exe <test_file.in> <window_size> <execution_units>
+	- ./SSS_Infinite.exe <test_file.in>
+	- ./SSS_LWindow.exe <test_file.in> <window_size>
+	- ./SSS_LWinExe.exe <test_file.in> <window_size> <execution_units>
