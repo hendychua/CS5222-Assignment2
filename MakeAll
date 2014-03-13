@@ -1,3 +1,5 @@
+cp src/main.py bin/main.py
+chmod 700 bin/main.py
 chmod 700 bin/SSS_Infinite.exe
 chmod 700 bin/SSS_LWindow.exe
 chmod 700 bin/SSS_LWinExe.exe
