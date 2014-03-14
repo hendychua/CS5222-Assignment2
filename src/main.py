@@ -7,6 +7,7 @@ log = logging.getLogger(__name__)
 NOT_PROCESSED = 0
 PROCESSING = 1
 PROCESSED = 2
+FETCHED = 3
 
 class GraphNode(object):
     
@@ -17,7 +18,6 @@ class GraphNode(object):
         self.consumers = set()
         self.status = NOT_PROCESSED
         self.latencies_left = latency
-        self.max_path_from_me = None
     
     def __repr__(self):
         string = ""
@@ -25,23 +25,10 @@ class GraphNode(object):
                     (self.index, self.latency, [p.index for p in self.producers],
                     [c.index for c in self.consumers], self.status)
         return string
-
-def get_critical_path(node):
-    log.debug(node.index)
-    if not node.consumers:
-        node.max_path_from_me = node.latency
-        return node.max_path_from_me
-    else:
-        all_paths = []
-        for consumer in node.consumers:
-            if consumer.max_path_from_me:
-                all_paths.append(node.latency + consumer.max_path_from_me)
-            else:
-                all_paths.append(node.latency + get_critical_path(consumer))
-        node.max_path_from_me = max(all_paths)
-        return node.max_path_from_me
         
 def main(instructions_file="", fetch_size=-1, num_execution_units=-1):
+    # -1 for infinite
+    
     log.info("instructions_file: %s"%instructions_file)
     log.info("fetch_size: %s, num_execution_units: %s"%(fetch_size, num_execution_units))
     
@@ -58,7 +45,7 @@ def main(instructions_file="", fetch_size=-1, num_execution_units=-1):
                 s2_reg, latency = (int(x) for x in tmp[1].split(":"))
                 new_node = GraphNode(index, latency)
             
-                # register renaming
+                # register renaming. look up the source regs in the table and see if any prev instructions writing to it
                 if registers_table[s1_reg] is not READY:
                     parent_node = all_nodes[registers_table[s1_reg]]
                     new_node.producers.add(parent_node)
@@ -67,57 +54,60 @@ def main(instructions_file="", fetch_size=-1, num_execution_units=-1):
                     parent_node = all_nodes[registers_table[s2_reg]]
                     new_node.producers.add(parent_node)
                     parent_node.consumers.add(new_node)
+                # destinatio register renaming
                 registers_table[dest_reg] = index
             
                 all_nodes.append(new_node)
     log.info(all_nodes)
     
-    if num_execution_units == -1 and fetch_size == -1:
-        # Part (A)
-        dependency_graph_heads = []
-        for node in all_nodes:
-            if not node.producers:
-                dependency_graph_heads.append(node)
-        log.debug("dependency_graph_heads: %s"%dependency_graph_heads)
-        log.debug("num heads: %s"%len(dependency_graph_heads))
+    cycles = 0 # final answer to be printed
+    execution_units_taken = 0
+    instructions_in_window = 0
+    while not all(n.status==PROCESSED for n in all_nodes):
+        cycles += 1
         
-        # if no restriction on both execution units and fetch size
-        # then the optimal cycles will be the critical path of the dependency graph
-        latencies = []
-        for i,head in enumerate(dependency_graph_heads):
-            log.debug("i=%s"%i)
-            latencies.append(get_critical_path(head))
-        print max(latencies)
-    
-    else:
-        # Part (B) and (C)
-        cycles = 0 # final answer
-        instructions_processing = 0
-        while not all(n.status==PROCESSED for n in all_nodes):
-            cycles += 1
-            instructions_fetch_in_this_cycle = 0
-            if instructions_processing < num_execution_units or num_execution_units==-1:
-                for inode in all_nodes:
-                    if inode.status not in (PROCESSED, PROCESSING):
-                        if not inode.producers or \
-                            all(n.status==PROCESSED for n in inode.producers):
-                            log.debug("inode %s"%inode.index)
-                            inode.status = PROCESSING
-                            log.info("fetched instruction %s in cycle %s."%(inode.index, cycles))
-                            instructions_processing += 1
-                            instructions_fetch_in_this_cycle += 1
-                    if instructions_fetch_in_this_cycle == fetch_size or \
-                        instructions_processing == num_execution_units:
-                        log.info("cycle %s. instructions_fetch_in_this_cycle: %s."%(cycles, instructions_fetch_in_this_cycle))
+        log.info("fetching")
+        # fetch instructions into window (simulating fetch, decode, issue)
+        if fetch_size != -1:
+            available_window_size = fetch_size - instructions_in_window
+        else:
+            available_window_size = -1
+        current_fetched_instructions = 0
+        if available_window_size > 0 or available_window_size == -1:
+            for inode in all_nodes:
+                if inode.status == NOT_PROCESSED:
+                    log.debug("fetching inode %s in cycle %s"%(inode.index, cycles))
+                    inode.status = FETCHED
+                    current_fetched_instructions += 1
+                    instructions_in_window += 1
+                    if current_fetched_instructions == available_window_size:
                         break
 
-            for inode in all_nodes:
-                if inode.status == PROCESSING:
-                    inode.latencies_left -= 1
-                    inode.status = PROCESSED if inode.latencies_left==0 else PROCESSING
-                    if inode.status == PROCESSED:
-                        instructions_processing -= 1
-        print cycles
+        log.info("moving to execute state")
+        # move those that are fetched to execution state for those that are able to
+        for inode in all_nodes:
+            log.debug("execution_units_taken: %s. num_execution_units: %s"%(execution_units_taken, num_execution_units))
+            if execution_units_taken < num_execution_units or num_execution_units==-1:
+                if inode.status == FETCHED:
+                    if not inode.producers or \
+                        all(n.status==PROCESSED for n in inode.producers):
+                        # no true dependencies with previous instructions or parent instructions have completed
+                        log.debug("moving to PROCESSING state for inode %s in cycle %s"%(inode.index, cycles))
+                        inode.status = PROCESSING
+                        execution_units_taken += 1
+                        instructions_in_window -= 1
+        
+        log.info("executing")
+        # execute those that are able to
+        for inode in all_nodes:
+            if inode.status == PROCESSING:
+                log.debug("reducing latencies_left for inode %s"%inode.index)
+                inode.latencies_left -= 1
+                inode.status = PROCESSED if inode.latencies_left==0 else PROCESSING
+                if inode.status == PROCESSED:
+                    execution_units_taken -= 1
+
+    print cycles
 
 if __name__ == "__main__":
     root = logging.getLogger()
